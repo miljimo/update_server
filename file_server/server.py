@@ -21,9 +21,39 @@ DEFAULT_PORT_ADDRESS  = 36061;
 class SignalHandler(object):
     def __init__(self):
         super().__init__();
+
+
+class Producer(BaseObject):
+
+    def __init__(self):
+        super();
+
+
+class Consumer(BaseObject):
+
+    def __init__(self, producer,  client):
+        super().__init__();
+        self.__producer  = producer;
+        self.__
+
+    
+        
         
 
 class DaemonServer(object):
+
+    __CLASS__     = None;
+    __INSTANCE__  = None;
+
+    #Implemeny single pattern in Python.
+    def __new__(cls, *args, **kwargs):
+        if(cls != None):
+            # There is class for this Server
+            # if this server have same address information
+            cls.__CLASS__  =  cls;
+            cls.__INSTANCE__  =  super().__new__(cls);
+        return cls.__INSTANCE__;
+        
 
     
     def __init__(self, **kwargs):
@@ -118,14 +148,15 @@ class DaemonServer(object):
             try:
                 # Listen and handle shake with clients
                 self.__Socket.listen(1);
-                client  = self.__Socket.accept(); # return a client stream to write and read from;
+                client, address  = self.__Socket.accept(); # return a client stream to write and read from;
                 ## Register the client and listen to write and read events for the client;
                 self.Clients.append(client);
-                print(client);
+                print(client.gethostname());
+                print(address);
             except Exception as err:
                 # Raise error events and terminate the server;
                 if(self.IsRunning):
-                    self.Close();
+                    self.Stop();
             finally:
                 #Remove all client and send and if possible send them
                 # A server shutdow message
@@ -140,8 +171,8 @@ class DaemonServer(object):
         try:
             if(self.__IsRunning):
                 self.__IsRunning  = False;
-                self.__RunThread.join(1);
-                
+                if(self.__RunThread.isAlive()):
+                    self.__RunThread.join(1);
                 if(self.__Socket != None):
                     # Close all client connections;
                     for client in self.Clients:
@@ -167,6 +198,6 @@ if(__name__ =="__main__"):
  
     while(server.IsRunning):
         pass;
-    server.Close();
+    server.Stop();
         
 
