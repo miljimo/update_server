@@ -14,6 +14,7 @@ import time;
 import os;
 import signal; # Handle system signals
 from events import BaseObject , EventHandler;
+from filewatchers import FileWatcher;
 
 DEFAULT_PORT_ADDRESS  = 36061;
 
