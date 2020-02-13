@@ -23,22 +23,6 @@ class SignalHandler(object):
         super().__init__();
 
 
-class Producer(BaseObject):
-
-    def __init__(self):
-        super();
-
-
-class Consumer(BaseObject):
-
-    def __init__(self, producer,  client):
-        super().__init__();
-        self.__producer  = producer;
-        self.__
-
-    
-        
-        
 
 class DaemonServer(object):
 
@@ -65,6 +49,7 @@ class DaemonServer(object):
         self.__Socket       = None;
         self.__HostAddress  = None;
         self.__Clients      = list();
+        self.ThreadPoles    = list();
         
     @property
     def Clients(self):
@@ -144,32 +129,43 @@ class DaemonServer(object):
         self.__CanStart   = False;
         print("Server started at : {0}:{1}".format(self.HostAddress, self.Port));
         while(self.IsRunning and (self.__Socket != None)):
-            print("Server listening will be here to handler clients");
             try:
-                # Listen and handle shake with clients
-                self.__Socket.listen(1);
-                client, address  = self.__Socket.accept(); # return a client stream to write and read from;
-                ## Register the client and listen to write and read events for the client;
+                print("Waiting for connections: ");
+                self.__Socket.listen(5);
+                client, address  = self.__Socket.accept(); 
+
+                print(client, address);
+                print("**********************")
                 self.Clients.append(client);
-                print(client.gethostname());
-                print(address);
+                name =  client.getpeername();
+                print("Number of Connections = {0}".format(name));
+               
+                newConnetionThread  =  Thread(target= self.OnNewConnection, args=(address, client));
+                newConnetionThread.daemon  = False;
+                newConnetionThread.start();
+                self.ThreadPoles.append(newConnetionThread);
             except Exception as err:
                 # Raise error events and terminate the server;
                 if(self.IsRunning):
                     self.Stop();
+                print(err);
             finally:
                 #Remove all client and send and if possible send them
                 # A server shutdow message
                 print("Finally");
                 pass;
 
-        
-        pass;
+    def OnNewConnection(self, address, client):
+        print("New Connection Started");
+        if(client != None):
+            while(True):
+                data  =   client.recv(4096);
+                print(data);
 
     def Stop(self):
         self.__StartLocker.acquire();
         try:
-            if(self.__IsRunning):
+            if(self.IsRunning):
                 self.__IsRunning  = False;
                 if(self.__RunThread.isAlive()):
                     self.__RunThread.join(1);
@@ -193,11 +189,13 @@ class DaemonServer(object):
 if(__name__ =="__main__"):
     server = DaemonServer();
     server.Start();
-
-   
- 
-    while(server.IsRunning):
-        pass;
-    server.Stop();
+    try:
+        while(server.IsRunning):
+            pass;
+        server.Stop();
+    except Exception as err:
+        print("Stop unexceptedly - {0}".format(err));
+    finally:
+        server.Stop();
         
 
