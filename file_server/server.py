@@ -13,43 +13,181 @@ from threading import Thread, Lock;
 import time;
 import os;
 import signal; # Handle system signals
-from events import BaseObject , EventHandler;
-from filewatchers import FileWatcher;
+from events import BaseObject , Event, EventHandler;
 
-DEFAULT_PORT_ADDRESS  = 36061;
+
+DEFAULT_PORT_ADDRESS        = 36061;
+DEFAULT_BACK_LOG_CONNECTION = 5;
+DEFAULT_READ_BLOCK          = 4096;
+WAIT_THREAD_INTERVAL        = 1.05;
 
 class SignalHandler(object):
     def __init__(self):
         super().__init__();
 
+class Parser(object):
 
+    def Parse(self, data:bytearray):
+        if(type(data) != bytearray):
+            raise TypeError("@Expecting a data array");
 
-class DaemonServer(object):
+            
+class Request(object):
 
-    __CLASS__     = None;
-    __INSTANCE__  = None;
+    def __init__(self, raw_bytes):
+        self.__RawBytes  = raw_bytes;
+        if(len(self.__RawBytes) <= 0) and (type(self.__RawBytes) != bytearray):
+            raise TypeError("@Request Expecting a byte array");
 
-    #Implemeny single pattern in Python.
-    def __new__(cls, *args, **kwargs):
-        if(cls != None):
-            # There is class for this Server
-            # if this server have same address information
-            cls.__CLASS__  =  cls;
-            cls.__INSTANCE__  =  super().__new__(cls);
-        return cls.__INSTANCE__;
+        self.__Header  =  None;
+        self.__Content =  None;
+
+    @property
+    def RawData(self):
+        return  self.__RawBytes;
+    
+
+class Client(object):
+
+    def __init__(self, soc):
+        if(isinstance(soc, socket.socket)) is not True:
+            raise TypeError("Expecting a socket type");
+        self.__Socket        =  soc;
+        self.__IsOpened      =  True;
+        self.__Closed  =  EventHandler();
+        self.__ReadLock  =  Lock();
+
+    @property
+    def Port(self):
+        return self.__Socket.getpeername()[1];
+    
+    @property
+    def IpAddress(self):
+        return self.__Socket.getpeername()[0];
+
+    @property
+    def Closed(self):
+        return self.__Closed
+
+    @Closed.setter
+    def Closed(self, handler):
+        if(isinstance(handler,EventHandler)):
+           if(self.__Closed == handler):
+               self.__Closed = handler;        
+
+    def Write(self , data:bytearray):
+        self.__ReadLock.acquire();
+        result =  0;
+        if(self.IsOpened):
+            result  = self.__Socket.send(data);
+        self.__ReadLock.release();
+        return result;
+
+    def Read(self , nSize = DEFAULT_READ_BLOCK ):
+        self.__ReadLock.acquire();
+        result =  None;
+        if(self.IsOpened)  and (type(nSize) is int):
+            data_recieved =  self.__Socket.recv(nSize);
+            if(len(data_recieved) > 0):
+                result = data_recieved;
+        self.__ReadLock.release();
+        return result;
         
+    @property
+    def IsOpened(self):
+        return self.__IsOpened;
 
+    def Close(self):
+        self.__ReadLock.acquire();
+        if(self.__IsOpened is True):
+            self.__IsOpened  =  False;
+            self.__Socket.close();
+            if(self.Closed is not None):
+                self.Closed(Event("socket.event.close"));
+        self.__ReadLock.release();
+            
+
+class ClientManager(object):
+
+    def __init__(self):
+        self.__Clients  =  dict();
+        self.__Locker  =  Lock();
+        pass;
+    
+    def Add(self, client):
+        self.__Locker.acquire();
+        status  = False;
+        ipaddress  =  "{0}:{1}".format(client.IpAddress, client.Port);
+        if(ipaddress not in self.__Clients):
+            self.__Clients[ipaddress] = client;
+            status  =  True;
+        self.__Locker.release();
+        return status;
+
+    def Delete(self, client):
+        self.__Locker.acquire();
+        status  =  False;
+        ipaddress  =  "{0}:{1}".format(client.IpAddress, client.Port);
+        if(ipaddress in self.__Clients):
+            del self.__Clients[ipaddress];
+            status  =  False;
+        self.__Locker.release();
+        return status;
+
+    def Clear(self):
+        self.__Locker.acquire();
+        for ipaddress in self.__Clients:
+            client =  self.__Clients[ipaddress];
+            client.Close();
+            del self.__Clients[ipaddress];            
+        self.__Locker.release();
+        
+    
+    @property
+    def Count(self):
+        return len(self.__Clients);
+    
+class DaemonServer(object):
     
     def __init__(self, **kwargs):
         self.__Port  = kwargs['port'] if(('port' in kwargs) and (type(kwargs['port']) == int)) else DEFAULT_PORT_ADDRESS;
         self.__StartLocker  =  Lock();
         self.__RunThread    = None;
         self.__IsRunning    = False;
-        self.__CanStart     = False;
         self.__Socket       = None;
         self.__HostAddress  = None;
-        self.__Clients      = list();
-        self.ThreadPoles    = list();
+        self.__BackLogConnections =  DEFAULT_BACK_LOG_CONNECTION ;
+        self.__Clients              = ClientManager();
+        self.__ThreadPoles          = list();
+        self.__ClientConnected      = EventHandler();
+        self.__ClientDisconnected   = EventHandler();
+        
+    @property
+    def ClientConnected(self):
+        return self.__ClientConnected;
+
+    @ClientConnected.setter
+    def ClientConnected(self, handler):
+        if(isinstance(handler , EventHandler)):
+            self.__ClientConnected   =  handler;
+    @property
+    def ClientDisconnected(self):
+        return self.__ClientDisconnected;
+
+    @ClientDisconnected.setter
+    def ClientDisconnected(self, handler):
+        if(isinstance(handler , EventHandler)):
+            self.__ClientDisconnected   =  handler;
+
+    @property
+    def BackLogConnections(self):
+        return self.__BackLogConnections;
+    
+    @BackLogConnections.setter
+    def BackLogConnections(self, value):
+        if type(value) is not int:
+            raise TypeError("@Backlog : expecting an integer value");
+        self.__BackLogConnections = value;
         
     @property
     def Clients(self):
@@ -107,87 +245,73 @@ class DaemonServer(object):
     def IsRunning(self, value):
         if(type(value) == bool):
             if(value != self.__IsRunning):
-                if( (value  == True) and (self.__CanStart == True)):
-                    # I think user want to start the server by setting this property to true;
-                    # The server is not running and this
-                    self.Start();
+                if(value is True) :
+                    if self.__IsRunning is not True:
+                        self.Start();
                 else:
-                    if(self.__IsRunning):
-                        # The server is running
-                        if(value == True):
-                            print("Unable to start server when server is already running");
-                        else:
-                            self.Stop(); # stop the server
-                            
-            self.__IsRunning  = value;
-                    
+                    if self.__IsRunning:
+                        if value is not True:
+                            self.Stop(); 
 
     def __InBackground(self):
 
         self.__StartLocker.release();
         self.__IsRunning  = True;
-        self.__CanStart   = False;
         print("Server started at : {0}:{1}".format(self.HostAddress, self.Port));
+        
         while(self.IsRunning and (self.__Socket != None)):
             try:
-                print("Waiting for connections: ");
-                self.__Socket.listen(5);
-                client, address  = self.__Socket.accept(); 
-
-                print(client, address);
-                print("**********************")
-                self.Clients.append(client);
-                name =  client.getpeername();
-                print("Number of Connections = {0}".format(name));
-               
-                newConnetionThread  =  Thread(target= self.OnNewConnection, args=(address, client));
+                self.__Socket.listen(self.BackLogConnections);
+                socket, address  = self.__Socket.accept();
+                client  = Client(socket)
+                newConnetionThread  =  Thread(target= self.OnNewConnection, args=(client, ));
                 newConnetionThread.daemon  = False;
                 newConnetionThread.start();
-                self.ThreadPoles.append(newConnetionThread);
+                self.__ThreadPoles.append(newConnetionThread);
+                print("IpAddress = {0}, Port = {1}/n".format(client.IpAddress,client.Port ));
             except Exception as err:
-                # Raise error events and terminate the server;
                 if(self.IsRunning):
                     self.Stop();
-                print(err);
+                raise err;
             finally:
                 #Remove all client and send and if possible send them
                 # A server shutdow message
-                print("Finally");
                 pass;
 
-    def OnNewConnection(self, address, client):
-        print("New Connection Started");
+    def OnNewConnection(self, client):
         if(client != None):
+            self.Clients.Add(client);
             while(True):
-                data  =   client.recv(4096);
+                data  =   client.Read();
+                if not data:
+                    client.Close();
+                    break;
                 print(data);
+  
 
     def Stop(self):
         self.__StartLocker.acquire();
         try:
             if(self.IsRunning):
                 self.__IsRunning  = False;
-                if(self.__RunThread.isAlive()):
-                    self.__RunThread.join(1);
+                if(self.__RunThread.is_alive()):
+                    self.__RunThread.join(WAIT_THREAD_INTERVAL);
                 if(self.__Socket != None):
-                    # Close all client connections;
-                    for client in self.Clients:
-                        client.close();
-                    self.__Socket.close();
+                   self.__CloseAllClient();
+                   self.__Socket.close();
                
         except Exception as err:
             print(err);
         finally:
             self.__RunThread  = None;
-            self.__CanStart   = True;
         self.__StartLocker.release();
 
-    
 
+    def __CloseAllClient(self):
+       self.Clients.Clear();
 
-
-if(__name__ =="__main__"):
-    server = DaemonServer();
+def run(port):
+    server = DaemonServer(port = port);
     server.Start();
     try:
         while(server.IsRunning):
@@ -197,5 +321,16 @@ if(__name__ =="__main__"):
         print("Stop unexceptedly - {0}".format(err));
     finally:
         server.Stop();
+        
+def start_server_at(port):
+    t  =  Thread(target = run, args=(port,));
+    t.start();
+    
+if(__name__ =="__main__"):
+   start_server_at(8081);
+   start_server_at(8082);
+   start_server_at(8083);
+   while(True):
+       pass;
         
 
