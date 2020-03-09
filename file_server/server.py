@@ -45,7 +45,30 @@ class Request(object):
     @property
     def RawData(self):
         return  self.__RawBytes;
-    
+
+"""
+  Version           : 2bytes
+  Packat-Id         : 2bytes
+  Session-Length    : 1bytes;
+  Session-UID       : 
+  Offset            : 2bytes;
+  
+  
+"""
+class Header(object):
+
+    def __init__(self):
+        self.__Version     = 0x00;
+        self.ContentLength = 0x0000;
+        pass;
+
+class Content(object):
+
+    def __init__(self, data: bytearray):
+        self.__Length  =  len(data);
+        self.__Data    =  data;
+        pass;
+
 
 class Client(object):
 
@@ -105,6 +128,9 @@ class Client(object):
             if(self.Closed is not None):
                 self.Closed(Event("socket.event.close"));
         self.__ReadLock.release();
+
+
+
             
 
 class ClientManager(object):
@@ -283,10 +309,12 @@ class DaemonServer(object):
             self.Clients.Add(client);
             while(True):
                 data  =   client.Read();
+                client.Write("HTTP/1.1 200 OK");
                 if not data:
                     client.Close();
                     break;
                 print(data);
+                
   
 
     def Stop(self):
