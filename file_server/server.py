@@ -14,7 +14,7 @@ import time;
 import os;
 import signal; # Handle system signals
 from events import BaseObject , Event, EventHandler;
-
+import StringIO;
 
 DEFAULT_PORT_ADDRESS        = 36061;
 DEFAULT_BACK_LOG_CONNECTION = 5;
@@ -68,6 +68,36 @@ class Content(object):
         self.__Length  =  len(data);
         self.__Data    =  data;
         pass;
+
+
+class Request(object):
+
+    def __init__(self, header :Header ,  content : Content):
+        self.__Header   =  header if (isinstance(header, Header))   else None;
+        self.__Content  =  content if(isinstance(content, Content)) else None;
+
+    @property
+    def Header(self):
+        return self.__Header;
+
+    @property
+    def Content(self):
+        return self.__Content;
+
+    @staticmethod
+    def Parse(data:bytearray):
+        request = None;
+        try:
+            
+            pass;
+        except Exception as err:
+            #Debug message
+            raise;
+
+        return request;
+        
+        
+        
 
 
 class Client(object):
