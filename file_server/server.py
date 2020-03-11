@@ -9,199 +9,18 @@
 """
 
 import socket;
-from threading import Thread, Lock;
+from threading  import Thread, Lock;
 import time;
 import os;
-import signal; # Handle system signals
-from events import BaseObject , Event, EventHandler;
-import StringIO;
-
-DEFAULT_PORT_ADDRESS        = 36061;
-DEFAULT_BACK_LOG_CONNECTION = 5;
-DEFAULT_READ_BLOCK          = 4096;
-WAIT_THREAD_INTERVAL        = 1.05;
-
-class SignalHandler(object):
-    def __init__(self):
-        super().__init__();
-
-class Parser(object):
-
-    def Parse(self, data:bytearray):
-        if(type(data) != bytearray):
-            raise TypeError("@Expecting a data array");
-
-            
-class Request(object):
-
-    def __init__(self, raw_bytes):
-        self.__RawBytes  = raw_bytes;
-        if(len(self.__RawBytes) <= 0) and (type(self.__RawBytes) != bytearray):
-            raise TypeError("@Request Expecting a byte array");
-
-        self.__Header  =  None;
-        self.__Content =  None;
-
-    @property
-    def RawData(self):
-        return  self.__RawBytes;
-
-"""
-  Version           : 2bytes
-  Packat-Id         : 2bytes
-  Session-Length    : 1bytes;
-  Session-UID       : 
-  Offset            : 2bytes;
-  
-  
-"""
-class Header(object):
-
-    def __init__(self):
-        self.__Version     = 0x00;
-        self.ContentLength = 0x0000;
-        pass;
-
-class Content(object):
-
-    def __init__(self, data: bytearray):
-        self.__Length  =  len(data);
-        self.__Data    =  data;
-        pass;
+import signal;
+import io;
+from events         import BaseObject , Event, EventHandler;
+from constants      import *;
+from clientmanager  import ClientManager;
+from client         import Client;
+from request        import Request;
 
 
-class Request(object):
-
-    def __init__(self, header :Header ,  content : Content):
-        self.__Header   =  header if (isinstance(header, Header))   else None;
-        self.__Content  =  content if(isinstance(content, Content)) else None;
-
-    @property
-    def Header(self):
-        return self.__Header;
-
-    @property
-    def Content(self):
-        return self.__Content;
-
-    @staticmethod
-    def Parse(data:bytearray):
-        request = None;
-        try:
-            
-            pass;
-        except Exception as err:
-            #Debug message
-            raise;
-
-        return request;
-        
-        
-        
-
-
-class Client(object):
-
-    def __init__(self, soc):
-        if(isinstance(soc, socket.socket)) is not True:
-            raise TypeError("Expecting a socket type");
-        self.__Socket        =  soc;
-        self.__IsOpened      =  True;
-        self.__Closed  =  EventHandler();
-        self.__ReadLock  =  Lock();
-
-    @property
-    def Port(self):
-        return self.__Socket.getpeername()[1];
-    
-    @property
-    def IpAddress(self):
-        return self.__Socket.getpeername()[0];
-
-    @property
-    def Closed(self):
-        return self.__Closed
-
-    @Closed.setter
-    def Closed(self, handler):
-        if(isinstance(handler,EventHandler)):
-           if(self.__Closed == handler):
-               self.__Closed = handler;        
-
-    def Write(self , data:bytearray):
-        self.__ReadLock.acquire();
-        result =  0;
-        if(self.IsOpened):
-            result  = self.__Socket.send(data);
-        self.__ReadLock.release();
-        return result;
-
-    def Read(self , nSize = DEFAULT_READ_BLOCK ):
-        self.__ReadLock.acquire();
-        result =  None;
-        if(self.IsOpened)  and (type(nSize) is int):
-            data_recieved =  self.__Socket.recv(nSize);
-            if(len(data_recieved) > 0):
-                result = data_recieved;
-        self.__ReadLock.release();
-        return result;
-        
-    @property
-    def IsOpened(self):
-        return self.__IsOpened;
-
-    def Close(self):
-        self.__ReadLock.acquire();
-        if(self.__IsOpened is True):
-            self.__IsOpened  =  False;
-            self.__Socket.close();
-            if(self.Closed is not None):
-                self.Closed(Event("socket.event.close"));
-        self.__ReadLock.release();
-
-
-
-            
-
-class ClientManager(object):
-
-    def __init__(self):
-        self.__Clients  =  dict();
-        self.__Locker  =  Lock();
-        pass;
-    
-    def Add(self, client):
-        self.__Locker.acquire();
-        status  = False;
-        ipaddress  =  "{0}:{1}".format(client.IpAddress, client.Port);
-        if(ipaddress not in self.__Clients):
-            self.__Clients[ipaddress] = client;
-            status  =  True;
-        self.__Locker.release();
-        return status;
-
-    def Delete(self, client):
-        self.__Locker.acquire();
-        status  =  False;
-        ipaddress  =  "{0}:{1}".format(client.IpAddress, client.Port);
-        if(ipaddress in self.__Clients):
-            del self.__Clients[ipaddress];
-            status  =  False;
-        self.__Locker.release();
-        return status;
-
-    def Clear(self):
-        self.__Locker.acquire();
-        for ipaddress in self.__Clients:
-            client =  self.__Clients[ipaddress];
-            client.Close();
-            del self.__Clients[ipaddress];            
-        self.__Locker.release();
-        
-    
-    @property
-    def Count(self):
-        return len(self.__Clients);
     
 class DaemonServer(object):
     
@@ -310,41 +129,48 @@ class DaemonServer(object):
                             self.Stop(); 
 
     def __InBackground(self):
-
         self.__StartLocker.release();
         self.__IsRunning  = True;
         print("Server started at : {0}:{1}".format(self.HostAddress, self.Port));
-        
-        while(self.IsRunning and (self.__Socket != None)):
-            try:
-                self.__Socket.listen(self.BackLogConnections);
-                socket, address  = self.__Socket.accept();
-                client  = Client(socket)
-                newConnetionThread  =  Thread(target= self.OnNewConnection, args=(client, ));
-                newConnetionThread.daemon  = False;
-                newConnetionThread.start();
-                self.__ThreadPoles.append(newConnetionThread);
-                print("IpAddress = {0}, Port = {1}/n".format(client.IpAddress,client.Port ));
-            except Exception as err:
-                if(self.IsRunning):
-                    self.Stop();
-                raise err;
-            finally:
-                #Remove all client and send and if possible send them
-                # A server shutdow message
-                pass;
+        while(self.IsRunning):           
+            while(self.__Socket != None):
+                try:
+                    self.__Socket.listen(self.BackLogConnections);
+                    socket, address  = self.__Socket.accept();
+                    
+                    if(socket != None):
+                        client  = Client(socket=socket , timeout=0)
+                        newConnetionThread  =  Thread(target= self.__HandleNewConnection, args=(client, ));
+                        newConnetionThread.daemon  = False;
+                        newConnetionThread.start();
+                        self.__ThreadPoles.append(newConnetionThread);
+                except Exception as err:
+                    print(err);
+                    if(self.IsRunning):
+                        self.Stop();
+                    raise err;
+                finally:
+                    #Remove all client and send and if possible send them
+                    # A server shutdow message
+                    pass;
+        self.Stop();
 
-    def OnNewConnection(self, client):
-        if(client != None):
-            self.Clients.Add(client);
-            while(True):
-                data  =   client.Read();
-                client.Write("HTTP/1.1 200 OK");
-                if not data:
-                    client.Close();
-                    break;
-                print(data);
-                
+    def __HandleNewConnection(self, client):
+        try:
+            if(client != None):
+                self.Clients.Add(client);
+                while(True):
+                    message  = client.Read();
+                    if not message :
+                        client.Close();
+                        break;
+                    else:
+                        request  =  Request.Parse(message);
+                        print(request);
+        except Exception as err:
+            print(err);
+            print(client);
+            pass;
   
 
     def Stop(self):
@@ -368,27 +194,27 @@ class DaemonServer(object):
     def __CloseAllClient(self):
        self.Clients.Clear();
 
-def run(port):
-    server = DaemonServer(port = port);
-    server.Start();
-    try:
-        while(server.IsRunning):
-            pass;
-        server.Stop();
-    except Exception as err:
-        print("Stop unexceptedly - {0}".format(err));
-    finally:
-        server.Stop();
-        
-def start_server_at(port):
-    t  =  Thread(target = run, args=(port,));
-    t.start();
+
     
 if(__name__ =="__main__"):
-   start_server_at(8081);
-   start_server_at(8082);
-   start_server_at(8083);
-   while(True):
+    def run(port):
+        server = DaemonServer(port = port);
+        server.Start();
+        try:
+            while(server.IsRunning):
+                
+                pass;
+        except Exception as err:
+            print("Stop unexceptedly - {0}".format(err));
+        finally:
+            server.Stop();
+        
+    def start_server_at(port):
+        t  =  Thread(target = run, args=(port,));
+        t.start();
+    start_server_at(8082);
+    
+    while(True):
        pass;
         
 
