@@ -7,7 +7,7 @@ from events import BaseObject , Event, EventHandler;
 class Client(object):
 
     def __init__(self, **kwargs):
-        soc = kwargs['socket'] if('socket' in kwargs) else None
+        soc = kwargs['socket'] if('socket' in kwargs) else None;
         self.__Socket        =  soc;
         self.__IsOpened      =  True if(isinstance(soc, socket.socket)) else False;
         self.__Closed        =  EventHandler();
@@ -16,6 +16,17 @@ class Client(object):
         self.__Timeout       = kwargs['timeout'] if (('timeout' in kwargs) and ((type(kwargs['timeout'])== int) or (type(kwargs['timeout'])== float))) else 5;
         if(self.__IsOpened):
              self.__Socket.settimeout(self.__Timeout);
+        self.__Thread  =  None;
+        
+    @property 
+    def Thread(self):
+        return self.__Thread;
+
+    @Thread.setter
+    def Thread(self, thread):
+        if(isinstance(thread,Thread)):
+            self.__Thread  =  thread;
+        
             
     def Open(self, host, port):
         self.__ReadLock.acquire();

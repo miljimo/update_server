@@ -1,4 +1,5 @@
 from threading import Lock;
+from constants import *;
 
 
 class ClientManager(object):
@@ -33,6 +34,7 @@ class ClientManager(object):
         for ipaddress in self.__Clients:
             client =  self.__Clients[ipaddress];
             client.Close();
+            client.Thread.join(WAIT_THREAD_INTERVAL);
             del self.__Clients[ipaddress];            
         self.__Locker.release();
         

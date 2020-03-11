@@ -132,6 +132,7 @@ class DaemonServer(object):
         self.__StartLocker.release();
         self.__IsRunning  = True;
         print("Server started at : {0}:{1}".format(self.HostAddress, self.Port));
+        
         while(self.IsRunning):           
             while(self.__Socket != None):
                 try:
@@ -140,18 +141,16 @@ class DaemonServer(object):
                     
                     if(socket != None):
                         client  = Client(socket=socket , timeout=0)
-                        newConnetionThread  =  Thread(target= self.__HandleNewConnection, args=(client, ));
-                        newConnetionThread.daemon  = False;
+                        newConnetionThread          =  Thread(target= self.__HandleNewConnection, args=(client,));
+                        newConnetionThread.daemon   = False;
+                        client.Thread               = newConnetionThread;
                         newConnetionThread.start();
                         self.__ThreadPoles.append(newConnetionThread);
                 except Exception as err:
-                    print(err);
                     if(self.IsRunning):
                         self.Stop();
                     raise err;
                 finally:
-                    #Remove all client and send and if possible send them
-                    # A server shutdow message
                     pass;
         self.Stop();
 
@@ -159,29 +158,28 @@ class DaemonServer(object):
         try:
             if(client != None):
                 self.Clients.Add(client);
-                while(True):
+                while(client.IsOpened):
                     message  = client.Read();
+                    print(message);
                     if not message :
                         client.Close();
-                        break;
                     else:
                         request  =  Request.Parse(message);
                         print(request);
+                print("Closed");
         except Exception as err:
-            print(err);
-            print(client);
-            pass;
-  
+            client.Close();
+            raise err;
 
     def Stop(self):
         self.__StartLocker.acquire();
         try:
-            if(self.IsRunning):
-                self.__IsRunning  = False;
+            if(self.IsRunning):               
                 if(self.__RunThread.is_alive()):
+                    self.__CloseAllClient();
+                    self.__IsRunning  = False;
                     self.__RunThread.join(WAIT_THREAD_INTERVAL);
-                if(self.__Socket != None):
-                   self.__CloseAllClient();
+                if(self.__Socket != None):                   
                    self.__Socket.close();
                
         except Exception as err:
